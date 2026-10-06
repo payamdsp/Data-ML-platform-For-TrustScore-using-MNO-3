@@ -1,0 +1,51 @@
+# DQ check definition: account_changes_batch
+
+dataset: account_changes_batch
+
+primary_keys: [record_id]           # data dictionary PK = id (only id is unique)
+partition_by: mno
+
+event_timestamp_col: event_timestamp
+
+completeness:
+  required_columns:                 # bronze NOT-NULL + pipeline constants
+    - record_id
+    - phone_number_ac_hash
+    - event_type
+    - event_timestamp
+    - mno
+    - source_name
+    - schema_version
+
+consistency:
+  allowed_values:
+    mno: [BELL, ROGERS, TELUS]
+  allowed_values_by_mno:
+    event_type:                     # per-MNO allowed change types
+      ROGERS: [DEVICE_CHANGE, SIM_CHANGE, "STATUS_CHANGE-C"]
+      TELUS:  [DEVICE_CHANGE, MSISDN_CHANGE, MSISDN_CHANGE_FROM, SIM_CHANGE,
+               "STATUS_CHANGE-A", "STATUS_CHANGE-AA", "STATUS_CHANGE-C", "STATUS_CHANGE-S"]
+      BELL:   [ADDRESS_CHANGE, DEVICE_CHANGE, MSISDN_CHANGE, MSISDN_CHANGE_FROM,
+               OWNERSHIP_CHANGE, SIM_CHANGE, "STATUS_CHANGE-A", "STATUS_CHANGE-AA",
+               "STATUS_CHANGE-C", "STATUS_CHANGE-S"]
+
+validity:                           # S12 formats Java regex (rlike), NULLs skipped
+  formats:                          # data catalog S1.1: change_key(=phone_number_AC_hash) is a
+                                    # 64-char lowercase hex string, 100% complete, all 3 carriers
+    record_id: '(?i)^[a-f0-9]{64}$'         # sha256(bronze id); cleaning asserts hex64, other tables format it too
+    phone_number_ac_hash: '(?i)^[a-f0-9]{64}$'    # (?i) so a valid hash never reds on case
+
+victim_exclusion:                   # S12 guard this table has no attestation column yet.
+  column: null                      # set both to enable, e.g. column: victim_attestation
+  allowed_values: []                # allowed_values: [CONFIRMED_BAD_ACTOR]
+
+timeliness:
+  # batch = event-time only (gate: no event dated after the run). streaming (gap =
+  # ingestion_ts - event_timestamp) is the AC's definition; use it once fed incrementally
+  # with a real ingestion_ts. Here ingestion_ts is an F.lit placeholder (cleaning cell 17), one-shot backfill.
+  mode: batch
+  future_grace_seconds: 0
+  currency:                         # meaningless while ingestion_ts is a placeholder
+    timestamp_col: ingestion_ts
+    max_age_seconds: null           # governance-provided; set a number to enable
+

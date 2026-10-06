@@ -1,0 +1,257 @@
+# Contract derived from the client POC and document section 6.1.2.
+# error quarantines the row; warning retains the row and reports a KPI.
+# Notes fields are a fixed allowlist; extra JSON keys are intentionally ignored.
+inputs:
+  id:
+    aliases:
+    - id
+    required: true
+  change_key:
+    aliases:
+    - change_key
+    required: true
+  mno:
+    aliases:
+    - mno
+    required: true
+  date:
+    aliases:
+    - date
+    required: true
+  timestamp:
+    aliases:
+    - timestamp
+    required: true
+  related_id:
+    aliases:
+    - related_id
+    required: true
+  status:
+    aliases:
+    - status
+    required: true
+  change_key_ats:
+    aliases:
+    - change_key_ats
+    required: false
+  imei:
+    aliases:
+    - imei
+    required: false
+  imsi:
+    aliases:
+    - imsi
+    required: false
+  notes:
+    aliases:
+    - notes
+    required: false
+notes_fields:
+- tac
+- oldIMSI
+- oldIMEI
+- fromADCSnapshot
+- correlationId
+output:
+  record_id: bigint
+  phone_number_AC_hash: string
+  phone_number_AT_hash: string
+  mno: string
+  imei: string
+  imsi: string
+  date: date
+  event_timestamp: timestamp
+  correlation_id: string
+  related_id: string
+  event_type: string
+  tac: string
+  oldIMSI: string
+  oldIMEI: string
+  fromADCSnapshot: string
+  ingestion_ts: timestamp
+  source_name: string
+  source_event_id: bigint
+  schema_version: int
+  event_date: date
+dataset: device_lookup_batch
+schema_version: 1
+source_name: MYSQL
+timezone: America/Toronto
+null_tokens:
+- ''
+- \N
+- MISSING_DATA
+rules:
+- id: required_correlation_id
+  kind: required
+  column: correlation_id
+  severity: warning
+- id: required_record_id
+  kind: required
+  column: record_id
+  severity: error
+- id: required_phone_number_AC_hash
+  kind: required
+  column: phone_number_AC_hash
+  severity: error
+- id: required_mno
+  kind: required
+  column: mno
+  severity: error
+- id: required_date
+  kind: required
+  column: date
+  severity: error
+- id: required_event_timestamp
+  kind: required
+  column: event_timestamp
+  severity: error
+- id: required_related_id
+  kind: required
+  column: related_id
+  severity: error
+- id: required_event_type
+  kind: required
+  column: event_type
+  severity: error
+- id: required_ingestion_ts
+  kind: required
+  column: ingestion_ts
+  severity: error
+- id: required_source_name
+  kind: required
+  column: source_name
+  severity: error
+- id: required_source_event_id
+  kind: required
+  column: source_event_id
+  severity: error
+- id: required_schema_version
+  kind: required
+  column: schema_version
+  severity: error
+- id: required_event_date
+  kind: required
+  column: event_date
+  severity: error
+- id: allowed_mno
+  kind: allowed
+  column: mno
+  severity: error
+  values:
+  - BELL
+  - ROGERS
+  - TELUS
+- id: by_mno_event_type
+  kind: by_mno
+  column: event_type
+  severity: error
+  values:
+    BELL:
+    - IMEI_START
+    - IMEI_END
+    - IMSI_START
+    - IMSI_END
+    ROGERS:
+    - IMEI_START
+    - IMEI_END
+    - IMSI_START
+    - IMSI_END
+    TELUS:
+    - IMEI_START
+    - IMEI_END
+    - IMEI_START_A
+    - IMEI_START_NC
+    - IMSI_START
+    - IMSI_END
+    - IMSI_START_A
+    - IMSI_START_NC
+    - IMSI_END_C
+- id: regex_phone_number_AT_hash
+  kind: regex
+  column: phone_number_AT_hash
+  severity: error
+  pattern: (?i)^[a-f0-9]{64}$
+- id: regex_phone_number_AC_hash
+  kind: regex
+  column: phone_number_AC_hash
+  severity: error
+  pattern: (?i)^[a-f0-9]{64}$
+- id: future_event_timestamp
+  kind: future
+  column: event_timestamp
+  severity: error
+  grace_seconds: 0
+- id: flag_bad_event_timestamp
+  kind: flag
+  column: _bad_event_timestamp
+  severity: error
+- id: flag_bad_record_id
+  kind: flag
+  column: _bad_record_id
+  severity: error
+- id: flag_bad_notes
+  kind: flag
+  column: _bad_notes
+  severity: error
+- id: positive_record_id
+  kind: positive
+  column: record_id
+  severity: error
+- id: flag_bad_date
+  kind: flag
+  column: _bad_date
+  severity: error
+- id: date_equal_date
+  kind: date_equal
+  column: date
+  severity: warning
+  other: event_date
+- id: regex_related_id
+  kind: regex
+  column: related_id
+  severity: warning
+  pattern: ^[0-9]+$
+- id: regex_imei
+  kind: regex
+  column: imei
+  severity: warning
+  pattern: (?i)^[a-f0-9]{64}$
+- id: regex_imsi
+  kind: regex
+  column: imsi
+  severity: warning
+  pattern: (?i)^[a-f0-9]{64}$
+- id: regex_oldIMEI
+  kind: regex
+  column: oldIMEI
+  severity: warning
+  pattern: (?i)^[a-f0-9]{64}$
+- id: regex_oldIMSI
+  kind: regex
+  column: oldIMSI
+  severity: warning
+  pattern: (?i)^[a-f0-9]{64}$
+- id: regex_tac
+  kind: regex
+  column: tac
+  severity: warning
+  pattern: ^[0-9]{8}$
+- id: required_when_imei
+  kind: required_when
+  column: imei
+  severity: warning
+  when_column: event_type
+  when_values:
+  - IMEI_START
+  - IMEI_START_A
+  - IMEI_START_NC
+- id: required_when_imsi
+  kind: required_when
+  column: imsi
+  severity: warning
+  when_column: event_type
+  when_values:
+  - IMSI_START
+  - IMSI_START_A
+  - IMSI_START_NC

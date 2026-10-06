@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars for a sandbox smoke run. Do not commit credentials.
+silver_bucket_name     = "lotus-sandbox-silver-conformed-data"
+glue_database_name     = "trust_score_silver_smoke_20260914"
+table_root_prefix      = "trust-score/silver-smoke/tables"
+iceberg_warehouse_uri  = "s3://lotus-sandbox-silver-conformed-data/trust-score/iceberg-warehouse-smoke/"
+table_version          = 1
+iceberg_format_version = 2
+enable_schema_evolution = true
+create_glue_database    = true

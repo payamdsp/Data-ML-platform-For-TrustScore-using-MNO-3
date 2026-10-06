@@ -1,0 +1,61 @@
+# DQ check definition: device_lookup_batch
+
+dataset: device_lookup_batch
+
+primary_keys: [record_id]           # data dictionary PK = id (id fully distinct)
+partition_by: mno
+
+event_timestamp_col: event_timestamp
+
+completeness:
+  required_columns:                 # 100%-non-null columns only. imei/imsi/phone_number_at_hash are
+                                    # conditionally null by event_type (41M/75.9M/20.9M nulls), so they stay
+                                    # out (a gate would red healthy data) and surface as KPIs instead.
+    - record_id
+    - phone_number_ac_hash
+    - mno
+    - date
+    - event_timestamp
+    - correlation_id
+    - related_id
+    - event_type
+    - ingestion_ts
+    - source_name
+    - source_event_id
+    - schema_version
+    - event_date
+
+consistency:
+  allowed_values:
+    mno: [BELL, ROGERS, TELUS]
+  allowed_values_by_mno:
+    event_type:                     # per-MNO allowed statuses
+      BELL:   [IMEI_START, IMEI_END, IMSI_START, IMSI_END]
+      ROGERS: [IMEI_START, IMEI_END, IMSI_START, IMSI_END]
+      TELUS:  [IMEI_START, IMEI_END, IMEI_START_A, IMEI_START_NC,
+               IMSI_START, IMSI_END, IMSI_START_A, IMSI_START_NC, IMSI_END_C]
+
+validity:                           # S12 formats Java regex (rlike), NULLs skipped
+  formats:                          # catalog S1.5 confirms BOTH hash columns 100% hex64 on non-null.
+                                    # imei/imsi/tac deliberately NOT checked: catalog documents real
+                                    # non-conforming values (imei 57 non-hex, imsi 7,544 BELL IMSI_END
+                                    # numerics, tac 2 rows '0') -> a format check would red on known data
+    phone_number_at_hash: '(?i)^[a-f0-9]{64}$'  # change_key_ats: non-null all hex64 (20.9M IMEI_START nulls skipped)
+    phone_number_ac_hash: '(?i)^[a-f0-9]{64}$'  # change_key: 100% hex64, 100% complete
+                                    # (?i) on carrier hashes = same contract as the cleaning checks;
+                                    # catalog says lowercase today, but case must not turn a valid hash red
+
+victim_exclusion:                   # S12 guard this table has no attestation column yet.
+  column: null                      # set both to enable, e.g. column: victim_attestation
+  allowed_values: []                # allowed_values: [CONFIRMED_BAD_ACTOR]
+
+timeliness:
+  # batch = event-time only (gate: no event dated after the run). streaming (gap =
+  # ingestion_ts - event_timestamp) is the AC's definition; use it once fed incrementally
+  # with a real ingestion_ts. Here ingestion_ts is an F.lit placeholder (cleaning cell 16), one-shot backfill.
+  mode: batch
+  future_grace_seconds: 0
+  currency:                         # meaningless while ingestion_ts is a placeholder
+    timestamp_col: ingestion_ts
+    max_age_seconds: null           # governance-provided; set a number to enable
+

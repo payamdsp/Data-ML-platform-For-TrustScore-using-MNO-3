@@ -1,0 +1,462 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://enstream/poc/dq/metrics.schema.json",
+  "title": "Silver DQ metrics.json",
+  "description": "Detailed DQ numbers (row counts, null %, distinct %, event-time recency) with per-MNO breakdown. \u00a76.1.2 Phase 1.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "dataset",
+    "run_date",
+    "partition_by",
+    "overall",
+    "per_mno"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "dataset": {
+      "type": "string"
+    },
+    "run_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "partition_by": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "overall": {
+      "$ref": "#/$defs/family_block"
+    },
+    "per_mno": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/family_block"
+      }
+    }
+  },
+  "$defs": {
+    "family_block": {
+      "type": "object",
+      "required": [
+        "row_count",
+        "completeness",
+        "consistency",
+        "uniqueness"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completeness": {
+          "type": "object",
+          "required": [
+            "per_column"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "per_column": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "null_count",
+                  "null_rate"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "null_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "null_rate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "consistency": {
+          "type": "object",
+          "required": [
+            "per_column"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "per_column": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "violation_count",
+                  "violation_rate"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "violation_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "violation_rate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "allowed_values": {
+                    "type": "array"
+                  },
+                  "allowed_values_by_mno": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "validity": {
+          "type": "object",
+          "required": [
+            "per_column"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "per_column": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "pattern",
+                  "violation_count",
+                  "violation_rate"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "violation_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "violation_rate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "uniqueness": {
+          "type": "object",
+          "required": [
+            "metrics"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "metrics": {
+              "type": "object",
+              "required": [
+                "distinct_keys",
+                "distinct_rate",
+                "duplicate_count",
+                "duplicate_rate",
+                "primary_keys"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "primary_keys": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "distinct_keys": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "duplicate_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "duplicate_rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "distinct_rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            }
+          }
+        },
+        "timeliness": {
+          "type": "object",
+          "required": [
+            "metrics"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "metrics": {
+              "type": "object",
+              "oneOf": [
+                {
+                  "required": [
+                    "mode",
+                    "event_timestamp_col",
+                    "future_count",
+                    "future_rate"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "mode": {
+                      "const": "batch"
+                    },
+                    "event_timestamp_col": {
+                      "type": "string"
+                    },
+                    "min_event_time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "max_event_time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "null_event_time_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "recency_seconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "future_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "future_rate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "max_recency_seconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "currency": {
+                      "type": "object",
+                      "required": [
+                        "timestamp_col",
+                        "max_age_seconds",
+                        "stale_count",
+                        "stale_rate"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "timestamp_col": {
+                          "type": "string"
+                        },
+                        "max_age_seconds": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "stale_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "stale_rate": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "mode",
+                    "event_timestamp_col",
+                    "ingestion_timestamp_col",
+                    "delay_violation_count",
+                    "delay_violation_rate"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "mode": {
+                      "const": "streaming"
+                    },
+                    "event_timestamp_col": {
+                      "type": "string"
+                    },
+                    "min_event_time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "max_event_time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "null_event_time_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "ingestion_timestamp_col": {
+                      "type": "string"
+                    },
+                    "min_ingestion_time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "max_ingestion_time": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "max_gap_seconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "negative_gap_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "negative_gap_rate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "null_ingestion_time_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "delay_violation_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "delay_violation_rate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "max_delay_seconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "currency": {
+                      "type": "object",
+                      "required": [
+                        "timestamp_col",
+                        "max_age_seconds",
+                        "stale_count",
+                        "stale_rate"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "timestamp_col": {
+                          "type": "string"
+                        },
+                        "max_age_seconds": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "stale_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "stale_rate": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "victim_exclusion": {
+          "type": "object",
+          "required": [
+            "metrics"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "metrics": {
+              "type": "object",
+              "required": [
+                "column",
+                "allowed_values",
+                "violation_count",
+                "violation_rate"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "type": "string"
+                },
+                "allowed_values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "violation_count": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "violation_rate": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

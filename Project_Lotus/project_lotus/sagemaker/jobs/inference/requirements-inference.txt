@@ -1,0 +1,28 @@
+# Trust Score 0.5 - INFERENCE image (Dockerfile.inference).
+#
+# requirements-training.txt without pyspark. The model libraries are pinned to
+# exactly the training versions: scoring unpickles the model.joblib bundle the
+# training image wrote, and joblib/pickle is not portable across versions.
+# torch comes from the CPU-only index (set in the Dockerfile).
+
+PyYAML==6.0.3
+boto3==1.43.103
+numpy==2.4.6
+pandas==3.0.6
+pyarrow==25.0.1
+scikit-learn==1.9.1
+scipy==1.17.1
+matplotlib==3.11.2
+joblib==1.6.0
+psutil==7.2.2
+tabulate==0.10.0
+
+# inference server (serve.py): SageMaker endpoints call /ping and /invocations
+flask==3.1.3
+gunicorn==23.0.0
+
+# model backends - MUST match requirements-training.txt
+pyod==3.6.6
+numba==0.67.0
+hdbscan==0.8.44
+torch==2.14.0

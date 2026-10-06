@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+# Build the artifacts a spark-submit needs and (optionally) upload them.
+#
+#   ./scripts/package.sh                          # build into ./dist
+#   ./scripts/package.sh s3://my-bucket/ts05/    # build and upload
+#
+# Produces:
+#   dist/trust_score_05.zip         -> --py-files
+#   dist/pydeps.zip                 -> --py-files, vendored PyYAML
+#   dist/<job>_job.py               -> the spark-submit entrypoint
+#   dist/conf/<family>/*.yaml       -> --config
+#
+# One zip for the whole `trust_score_05` package, not one per pipeline. The ML
+# jobs import `trust_score_05.lineage.config` and `.logging_utils` - the config
+# loader and the logging setup are shared, deliberately, so that a run manifest
+# from either pipeline is read the same way - so a lineage-only archive would
+# fail on the executors of every ML submission.
+#
+# The configs keep their `conf/lineage/` and `conf/ml/` subdirectories rather
+# than being flattened. Both families have a `base.yaml`, and scripts/
+# submit_emr.sh hands configs to YARN as `--files`, which localises them into
+# the container by basename: flattened, one `base.yaml` would overwrite the
+# other and a submission would silently run on the wrong pipeline's defaults.
+#
+# A zip of the package is used rather than a wheel because --py-files handles
+# zips natively on every EMR release and needs no pip install on the executors.
+# That matters more here than in Bronze -> Silver: two of the Gold stages run as
+# plain Python inside an RDD map, so the package has to be importable on every
+# executor, not only on the driver.
+#
+# `pydeps.zip` carries PyYAML, because the config loader reads YAML before there
+# is a SparkSession and emr-7.14.0's driver Python does not have it. The full
+# argument - including why a bootstrap action and a switch to JSON were both
+# rejected - is written out once, in pipelines/bronze_to_silver/scripts/
+# package.sh, and is not repeated here.
+# -----------------------------------------------------------------------------
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${HERE}/.." && pwd)"
+# Where the build lands. Defaults to `dist/` beside the source, which is what
+# anyone running this by hand wants, but it is overridable because the build does
+# not have to happen inside the checkout and sometimes cannot. The first thing
+# done below is `rm -rf "${DIST}"`, and a checkout that is mounted read-only - a
+# CI workspace, a container bind mount, a shared build agent - fails there with
+# "Operation not permitted" before a single artifact is produced. Pointing DIST
+# at scratch space makes the build work anywhere:
+#
+#   DIST=/tmp/ts05-s2g ./scripts/package.sh s3://bucket/artifacts/
+DIST="${DIST:-${ROOT}/dist}"
+DEST="${1:-}"
+
+rm -rf "${DIST}"
+mkdir -p "${DIST}/conf"
+
+# 1. the package itself, zipped from the repo root so the archive root is the
+#    top-level `trust_score_05` package and `import trust_score_05.ml.sweep`
+#    resolves on an executor with the zip on its path.
+(
+  cd "${ROOT}"
+  find trust_score_05 -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+  zip -qr "${DIST}/trust_score_05.zip" trust_score_05 -x '*.pyc'
+)
+
+# 1b. the vendored third-party dependencies. Built from whatever PyYAML this
+#     build environment has rather than downloaded, so the build needs no
+#     network and the cluster runs the version the tests ran against.
+YAML_DIR="$(python3 -c 'import os, yaml; print(os.path.dirname(yaml.__file__))' 2>/dev/null || true)"
+if [[ -z "${YAML_DIR}" ]]; then
+  echo "ERROR: PyYAML is not importable here, so it cannot be vendored into" >&2
+  echo "       pydeps.zip. Install it (pip install pyyaml) and run this again;" >&2
+  echo "       a bundle built without it fails on the cluster before the" >&2
+  echo "       SparkSession exists, where the reason is hard to see." >&2
+  exit 1
+fi
+(
+  cd "$(dirname "${YAML_DIR}")"
+  zip -qr "${DIST}/pydeps.zip" yaml \
+    -x '*.pyc' '*/__pycache__/*' '*.so' '*.pyd'
+)
+
+# 2. thin entrypoint scripts. spark-submit takes a single .py file; these just
+#    delegate into the packaged module shipped via --py-files.
+#
+#    The step name is not the module name for the ML jobs: `ml-discovery` reads
+#    as a pipeline stage on a cluster's step list, where `discovery_job` does
+#    not say which pipeline it belongs to. scripts/submit_emr.sh accepts the
+#    same names, and the two lists have to agree.
+declare -A JOB_MODULES=(
+  [lineage]=trust_score_05.lineage.jobs.lineage_job
+  [imei_map]=trust_score_05.lineage.jobs.imei_map_job
+  [ml-discovery]=trust_score_05.ml.jobs.discovery_job
+  [ml-selection]=trust_score_05.ml.jobs.selection_job
+  [ml-sweep]=trust_score_05.ml.jobs.sweep_job
+)
+for job in "${!JOB_MODULES[@]}"; do
+  cat > "${DIST}/${job}_job.py" <<EOF
+"""spark-submit entrypoint for ${job}. Generated by scripts/package.sh.
+
+main_cli() returns the exit code rather than raising, so it has to be handed to
+sys.exit: that non-zero status is how the EMR step - and therefore the
+orchestrator - learns that a DQ abort, a delete-ratio veto or a failed ML
+discovery gate blocked the run.
+"""
+import sys
+
+from ${JOB_MODULES[${job}]} import main_cli
+
+if __name__ == "__main__":
+    sys.exit(main_cli())
+EOF
+done
+
+# 3. config, subdirectories preserved. See the header for why they are not
+#    flattened.
+for family in lineage ml; do
+  mkdir -p "${DIST}/conf/${family}"
+  cp "${ROOT}/conf/${family}"/*.yaml "${DIST}/conf/${family}/"
+done
+
+echo "built:"
+find "${DIST}" -type f | sort | sed 's/^/  /'
+
+if [[ -n "${DEST}" ]]; then
+  echo
+  echo "uploading to ${DEST}"
+  aws s3 sync "${DIST}" "${DEST%/}/" --delete
+fi

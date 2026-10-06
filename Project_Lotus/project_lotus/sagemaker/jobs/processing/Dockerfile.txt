@@ -1,0 +1,47 @@
+# =============================================================================
+# Trust Score 0.5 - FEATURE ENGINEERING image  (feature_engineering.py)
+#
+#   docker build -f Dockerfile.features \
+#       --build-arg SPARK_IMAGE=<sagemaker-spark-processing image URI for the region> \
+#       -t <account>.dkr.ecr.<region>.amazonaws.com/lotus-sandbox-trust-score-features:<tag> .
+#   (run from sagemaker/)
+#
+# Based on AWS's managed SageMaker Spark Processing container, which provides
+# `smspark-submit`: it forms a YARN cluster across the processing job's
+# instances and spark-submits the script. The Step Functions definition runs
+#   smspark-submit --py-files /opt/program/trust_score_05.zip \
+#       /opt/program/feature_engineering.py --config ... --mode training|scoring
+#
+# SPARK_IMAGE: the Spark 3.5 processing image for the region, e.g. from the
+# SageMaker Python SDK:
+#   python -c "import sagemaker; print(sagemaker.image_uris.retrieve('spark', 'ca-central-1', version='3.5'))"
+# Pulling it needs `aws ecr get-login-password` for THAT image's registry account.
+# =============================================================================
+ARG SPARK_IMAGE
+FROM ${SPARK_IMAGE}
+
+# Iceberg for Spark 3.5 / Scala 2.12, plus the AWS bundle for the Glue catalog
+# and S3FileIO: the Gold and Silver tables are Iceberg tables in Glue. Each jar
+# is checked against the SHA-1 Maven Central publishes beside it.
+ARG ICEBERG_VERSION=1.6.1
+RUN set -eu; \
+    JARS=/usr/lib/spark/jars; \
+    for coord in \
+        "org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/${ICEBERG_VERSION}/iceberg-spark-runtime-3.5_2.12-${ICEBERG_VERSION}.jar" \
+        "org/apache/iceberg/iceberg-aws-bundle/${ICEBERG_VERSION}/iceberg-aws-bundle-${ICEBERG_VERSION}.jar"; do \
+        url="https://repo1.maven.org/maven2/${coord}"; \
+        name="$(basename "${coord}")"; \
+        curl -fsSL "${url}" -o "${JARS}/${name}"; \
+        echo "$(curl -fsSL "${url}.sha1")  ${JARS}/${name}" | sha1sum -c -; \
+    done
+
+# The package (only what the feature job imports needs to be there, but the
+# whole package is small) and the job. The zip is what --py-files ships to every
+# executor; the unpacked copy is what the driver imports.
+ENV PROGRAM_DIR=/opt/program
+WORKDIR /opt/program
+COPY trust_score_05/ /opt/program/trust_score_05/
+COPY jobs/processing/feature_engineering.py /opt/program/
+RUN cd /opt/program \
+ && python3 -c "import shutil; shutil.make_archive('trust_score_05', 'zip', '.', 'trust_score_05')" \
+ && python3 -c "import sys; sys.path.insert(0, '/opt/program'); import trust_score_05.features.assemble; print('feature library imports OK')"

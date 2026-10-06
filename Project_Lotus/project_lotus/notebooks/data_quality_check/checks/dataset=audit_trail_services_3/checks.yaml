@@ -1,0 +1,54 @@
+# DQ check definition: audit_trail_services_3
+
+dataset: audit_trail_services_3
+
+primary_keys: [record_id]           # record_id = sha256(bronze id), distinct per surviving row after the
+                                    # per-operation full-row dedup. Matches this table's tests notebook,
+                                    # whose uniqueness check is distinct(record_id) == total. (The data
+                                    # dictionary's composite business PID is not the dedup key here.)
+partition_by: mno                   # nullable; "__null__" group expected for identity-verification partners
+
+event_timestamp_col: api_timestamp  # audit_trail event time (no ingestion_ts on this table)
+
+completeness:
+  required_columns:                 # non-null gate. service_provider_id dropped: 563 real rows are null
+                                    # in prod (still tracked as a null KPI in metrics, just not a hard gate).
+    - record_id
+    - operation
+    - partner_id
+    - api_timestamp
+    - api_type
+    - source_name
+    - schema_version
+    - source_event_id
+
+consistency:
+  allowed_values:
+    mno: [BELL, ROGERS, TELUS, BELL_LANDLINE, LINETYPE, EV_LINETYPE]
+    # non-null only. BELL_LANDLINE / LINETYPE / EV_LINETYPE are line-type values that actually
+    # occur in the mno column (15.6M rows); added to reflect the real data.
+
+validity:                           # S12 formats Java regex (rlike), NULLs skipped.
+  formats:                          # only the three the data catalog confirms 100% on non-null.
+                                    # DROPPED per 100%-or-drop rule: source_ip (52 rows are the
+                                    # placeholder '#', not IPv4); partner_id + service_provider_id
+                                    # (no single format 10-digit ids mixed with test strings
+                                    # like 'ens_batch_test' so no pattern is both 100% and useful)
+    phone_number_at_hash: '(?i)^[a-f0-9]{64}$'   # catalog S1.3: non-null 64-char hex; (?i) so case never reds
+    # record_id format check dropped: 100% of prod rows failed '(?i)^[a-f0-9]{64}$' (the live values
+    # are not hex64). uniqueness already guarantees record_id is unique per row, so a format check adds nothing.
+    encrypted_msisdn: '^[A-Za-z0-9+/=]+$'     # catalog S1.3: base64; permissive (never false-red)
+
+victim_exclusion:                   # S12 guard this table has no attestation column yet.
+  column: null                      # set both to enable, e.g. column: victim_attestation
+  allowed_values: []                # allowed_values: [CONFIRMED_BAD_ACTOR]
+
+timeliness:
+  # batch = event-time only (gate: no event dated after the run). streaming (gap =
+  # ingestion_ts - event_timestamp) is the AC's definition; use it once fed incrementally
+  # with a real ingestion_ts. This table has no ingestion_ts column, so batch it is.
+  mode: batch
+  future_grace_seconds: 0
+  currency:                         # audit has no ingestion_ts; uses api_timestamp
+    timestamp_col: api_timestamp
+    max_age_seconds: null           # governance-provided; set a number to enable

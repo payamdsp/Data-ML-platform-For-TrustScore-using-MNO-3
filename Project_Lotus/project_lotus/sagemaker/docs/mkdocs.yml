@@ -1,0 +1,13 @@
+site_name: Trust Score 0.5
+site_author: DAI Team
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Handover: handover.md
+
+markdown_extensions:
+  - tables
+  - admonition
+  - toc:
+      permalink: true

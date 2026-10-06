@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://enstream/poc/dq/summary.schema.json",
+  "title": "Silver DQ summary.json",
+  "description": "Pass/fail counts per rule for one silver DQ run. \u00a76.1.2 Phase 1.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "dataset",
+    "run_date",
+    "row_count",
+    "rule_count",
+    "passed_count",
+    "failed_count",
+    "passed",
+    "rules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "dataset": {
+      "type": "string"
+    },
+    "run_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "row_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rule_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "passed_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "family",
+          "rule",
+          "column",
+          "violations",
+          "passed"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "family": {
+            "type": "string",
+            "enum": [
+              "completeness",
+              "consistency",
+              "validity",
+              "uniqueness",
+              "timeliness",
+              "victim_exclusion"
+            ]
+          },
+          "rule": {
+            "type": "string"
+          },
+          "column": {
+            "type": "string"
+          },
+          "violations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

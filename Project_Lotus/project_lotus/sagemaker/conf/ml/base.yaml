@@ -1,0 +1,283 @@
+# =============================================================================
+# The anomaly-detection ML pipeline: base configuration
+# =============================================================================
+# Defaults shared by every environment. Never edit this file to run somewhere
+# specific - add an overlay (conf/ml/local.yaml, conf/ml/dev.yaml, ...) and pass
+# it with --config. Overlays are merged key by key, so an overlay only has to
+# state what differs.
+#
+# Precedence, lowest to highest:
+#   this file  <  --config overlays (in order)  <  --set key=value  <  ${ENV_VAR}
+#
+# ${VAR:-default} works anywhere below.
+#
+# Every key here is read by exactly one line of
+# `trust_score_05.ml.config.config_to_ml_config`, and each of those lines takes
+# its fallback from the `MLConfig` dataclass default rather than from this file.
+# So a key spelled wrongly here is silently ignored - it does not shadow the
+# default and it does not raise. `tests/ml/test_config.py` walks the dataclass
+# and asserts every field is reachable from a YAML key, which is the only thing
+# that catches a rename on one side and not the other.
+#
+# The data roots below are deliberately empty. `MLConfig.__post_init__` does not
+# require them, because the discovery and selection stages each need only some
+# of them, but every path function does - so an unset root surfaces as a path
+# beginning with `/`, which is why local.yaml sets all four and no stage
+# guesses.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# run identity
+# -----------------------------------------------------------------------------
+# `models_version` groups every artifact of one experiment; `run_id` identifies
+# one execution within it. Both become path segments (`version_id=`, `run_id=`),
+# so two jobs of one fanned-out sweep must agree on both or their outputs land
+# under different prefixes and no leaderboard sees them together.
+run:
+  # full | pilot. Selects between the two training-sample sizes and the two
+  # profiling sizes under `sampling:` below, and nothing else branches on it.
+  # A pilot is for proving a pipeline change runs end to end; its metrics are
+  # not comparable to a full run's, because they are computed over a smaller
+  # population.
+  mode: full
+
+  models_version: ${TS05_ML_VERSION:-v3}
+
+  # Null means "let MLConfig default it to a UTC timestamp", which makes reruns
+  # distinguishable without an operator inventing names. A scheduler fanning one
+  # sweep across several jobs must instead pin it: set TS05_RUN_ID on every job
+  # and leave this null - `load_ml_config` reads that variable only when this key
+  # is unset, so a config that names a run id always wins over the environment.
+  run_id: null
+
+  # Seeds every sampling draw, every model that takes a random_state, and the
+  # deterministic grid truncation. One seed rather than one per stage: a run
+  # that cannot be reproduced from a single number in its manifest cannot be
+  # reproduced.
+  seed: 42
+
+# -----------------------------------------------------------------------------
+# data locations
+# -----------------------------------------------------------------------------
+data:
+  # The feature tables, partitioned by `time_window=`. Training and testing are
+  # separate roots rather than one root with a date filter, because the two
+  # populations are produced by different upstream jobs and a filter over one
+  # root would silently read whatever the other had written.
+  training_root: ${TS05_ML_TRAINING_ROOT:-}
+  testing_root: ${TS05_ML_TESTING_ROOT:-}
+
+  # Where the per-model ranked feature lists are read from and written to.
+  feature_selection_root: ${TS05_ML_SELECTION_ROOT:-}
+
+  # The output root. Everything a run writes lands under
+  # <models_root>/version_id=<models_version>/... - see
+  # `trust_score_05.ml.paths` for the whole layout.
+  models_root: ${TS05_ML_MODELS_ROOT:-}
+
+  # Which monthly partitions train, and which are scored. Empty here because
+  # they move every month and a stale default would train on the wrong months
+  # while looking configured. `MLConfig.__post_init__` rejects an overlap
+  # between the two lists: a month in both would put rows the model was fitted
+  # on into the population its metrics are computed over.
+  training_months: []
+  testing_windows: []
+
+  # The fraud feeds to union. Each has its own vocabulary, mapped onto the ten
+  # shared categories by `trust_score_05.ml.taxonomy`.
+  fraud_sources: []
+
+  # Fraud events before this instant are dropped. A data-quality bound, not a
+  # statement that early fraud is uninteresting: the fraud feed's history before
+  # this date is incomplete, so a fraud rate computed across it understates the
+  # real one. Move it when the feed is backfilled.
+  fraud_min_timestamp: "2024-10-01 00:00:00"
+
+# -----------------------------------------------------------------------------
+# sampling
+# -----------------------------------------------------------------------------
+sampling:
+  # Rows drawn per training month, per `run.mode`. Per month rather than from
+  # the union: a union-then-sample draws in proportion to each month's size, so
+  # a month with three times the traffic contributes three times the rows and
+  # the model's notion of normal drifts towards it.
+  train_rows_per_month_full: 130000
+  train_rows_per_month_pilot: 25000
+
+  # 0 = no cap, which is the only correct value outside a smoke test. A cap
+  # here changes the *reported metrics*, because it changes the population they
+  # are computed over - recall at the top 1% of 50,000 rows is not recall at
+  # the top 1% of a million.
+  max_eval_rows_per_scenario: 0
+
+  # 0 = no cap. Affects only what the plots are drawn from, via
+  # `trust_score_05.common.splitting.stratified_sample`, so it is safe to set:
+  # a scatter of two million points is a filled rectangle either way.
+  max_plot_rows: 200000
+
+  # Rows drawn to profile null rate and variance during feature selection. The
+  # profile decides which features are *eligible*, so it needs enough rows for
+  # a rare-but-real feature to appear at all.
+  profile_rows_full: 200000
+  profile_rows_pilot: 50000
+
+# -----------------------------------------------------------------------------
+# the sweep
+# -----------------------------------------------------------------------------
+# The cross-product of these two lists with the model list and the feature
+# selection method is the set of *arms*; each arm then walks its model's
+# hyperparameter grid. See `trust_score_05.ml.sweep.sweep_arms`.
+sweep:
+  # How many top-ranked features each arm uses. A ladder rather than one value
+  # because the answer is not known in advance and it differs by model: a
+  # distance-based detector degrades with dimension where an ECOD does not.
+  top_n_feature_counts: [25, 50, 75, 100, 125, 150, 200]
+
+  # The nine imputation x scaling variants, as
+  # `<imputation>_impute[_with_missing_indicators]_<scaler>`. Nine rather than
+  # all twenty combinations because the rest are either degenerate (scaling a
+  # zero-imputed sparse matrix) or dominated. Parsed by
+  # `trust_score_05.ml.preprocessing.parse_preprocessing_id`, which rejects an
+  # unknown token rather than falling back to a default - a typo here must not
+  # quietly become `median_impute_standard_scaler`.
+  # This list must stay identical to `DEFAULT_PREPROCESSING_IDS` in
+  # `trust_score_05.ml.config`; the code default is what a run without this key
+  # uses, and a divergence would mean two sweeps of "the nine variants" swept
+  # different nines.
+  preprocessing_ids:
+    - raw_numeric_zero_impute_no_scaling
+    - domain_impute_no_scaling
+    - domain_impute_standard_scaler
+    - domain_impute_robust_scaler
+    - domain_impute_minmax_scaler
+    - domain_impute_quantile_normal
+    - median_impute_standard_scaler
+    - median_impute_robust_scaler
+    - zero_impute_with_missing_indicators_robust_scaler
+
+  # 0 = the full grid. A positive value truncates it *deterministically* - see
+  # `trust_score_05.ml.grids.limit_grid`, which takes an evenly spaced stride
+  # through the ordered grid rather than the first n. The first n of a grid
+  # ordered by its first parameter is a slice of one parameter's range, which is
+  # why a truncated sweep used to report that the smallest k always won.
+  max_hyperparam_configs: 0
+
+# -----------------------------------------------------------------------------
+# feature selection thresholds
+# -----------------------------------------------------------------------------
+selection:
+  # A feature null in more than this fraction of profiled rows is dropped.
+  # 0.999 rather than something like 0.5 because a feature that is null 99% of
+  # the time can still be the sharpest signal available - "device changed in the
+  # last hour" is rare, and that is the point. This bound exists to drop
+  # features that are *entirely* absent, which happens when a feature family
+  # was never computed for a scope.
+  max_null_rate: 0.999
+
+  # A feature with variance at or below this is constant on the training sample
+  # and carries no information. Not zero, because a float32 matrix of a
+  # constant column has a variance of about 1e-15 rather than exactly 0.
+  min_variance: 1.0e-12
+
+# -----------------------------------------------------------------------------
+# what "best" means
+# -----------------------------------------------------------------------------
+# These four are a statement about the team that will use the model, not a
+# modelling decision: the recall a review queue of `k_percent` achieves, counted
+# at `level`, averaged over the evaluation months.
+best_config:
+  # record | customer | fraud_case. `customer` is the operational unit - a
+  # queue holds customers, not records - and it is also the honest one: a
+  # customer with forty records can otherwise fill forty queue slots and be
+  # counted as forty catches.
+  level: customer
+
+  metric: recall_at_k
+
+  # The review queue as a percentage of the scored population.
+  k_percent: 1.0
+
+  # mean | median | min | max. How the per-scenario values are combined before
+  # configurations are compared. The mean, not the maximum: a configuration
+  # that is excellent on one month and useless on the others is worse than one
+  # that is good on all of them, and `max` says the opposite - it selects on the
+  # single luckiest month and reports that month's number as the model's
+  # performance. See `trust_score_05.ml.evaluation.leaderboard`.
+  aggregate: mean
+
+# -----------------------------------------------------------------------------
+# drift thresholds
+# -----------------------------------------------------------------------------
+# Diagnostics, not gates: nothing here changes a metric or fails a run. They
+# decide when a drift record is labelled `drifted`, which is what an operator
+# reads to know whether a model's population still resembles the one it was
+# fitted on.
+drift:
+  # Flag a cluster whose share of the population changed by more than this
+  # *relative* to its training share. Relative rather than absolute, because
+  # the cluster count is a swept dimension and an absolute threshold means
+  # something different at every value of it: at k=2 the average cluster holds
+  # half the population and a 0.05 absolute shift is a 10% move, while at k=200
+  # the average cluster holds 0.005 and 0.05 is a shift no cluster can reach.
+  # A fixed 0.05 absolute difference across a grid spanning k=2 to k=200 fires
+  # constantly at the bottom of the ladder and cannot fire at all at the top.
+  cluster_proportion_ratio: 0.25
+
+  # Flag a cluster whose mean distance to its centroid grew by more than this
+  # multiple of its training mean. 1.25 rather than 2.0 because the quantity is
+  # a mean over a whole cluster, and a mean that moves a quarter has had a lot
+  # of individual rows move much further.
+  cluster_distance_ratio: 1.25
+
+  # Flag the population when the anomaly score distribution's population
+  # stability index exceeds this. 0.25 is the conventional "significant shift"
+  # line for a PSI, with 0.10 the "worth looking at" line.
+  score_psi: 0.25
+
+# -----------------------------------------------------------------------------
+# behaviour
+# -----------------------------------------------------------------------------
+behaviour:
+  # Fail rather than impute when a selected feature is absent from a population
+  # being scored. Off by default: the selection is made on training data, and a
+  # feature legitimately absent from one month's fraud extract should not end
+  # the run. What must not happen is that it passes unrecorded, so
+  # `trust_score_05.ml.datasets` counts the missing features into the run
+  # manifest either way - a high count invalidates the metrics whether or not
+  # this flag is on.
+  strict_missing_feature_check: false
+
+  # Write fraud rows whose timestamp will not parse, or falls outside the
+  # feed's plausible range, to a quarantine table instead of dropping them.
+  # On, because a dropped fraud row lowers the measured fraud rate and nothing
+  # downstream can tell that from there having been less fraud.
+  quarantine_bad_fraud_timestamps: true
+
+  # Write each scenario's scored population as CSV as well as parquet. Off: at
+  # a million rows per scenario per configuration the CSVs dominate the run's
+  # storage and nothing reads them. Turn it on for one run when a human needs
+  # to open the scores in a spreadsheet.
+  write_scores_csv: false
+
+  # Raise when a plot cannot be written, rather than logging and continuing.
+  # On, because a silently absent plot is read as "this diagnostic looked fine"
+  # by everyone who does not go looking for the file. See
+  # `trust_score_05.common.viz.plots`.
+  strict_plots: true
+
+spark:
+  # The session timezone every ML job pins, in
+  # `trust_score_05.ml.jobs.base.build_spark_session`.
+  #
+  # It must equal `spark.session_timezone` in conf/lineage/base.yaml. The
+  # feature tables this pipeline reads were written by that pipeline, and their
+  # timestamps are wall-clock time in that zone. `data.fraud_min_timestamp`
+  # below is a string parsed by `to_timestamp` in the *session's* zone, so a
+  # session five hours away moves the fraud cutoff five hours and changes which
+  # labelled rows are evaluated - silently, because the filter still succeeds
+  # and still returns rows. The only symptom is a fraud count that differs
+  # between two runs of the same config on the same data.
+  #
+  # A config key rather than a constant so that one value governs and it lands
+  # in every run manifest via `MLConfig.as_dict`.
+  session_timezone: EST

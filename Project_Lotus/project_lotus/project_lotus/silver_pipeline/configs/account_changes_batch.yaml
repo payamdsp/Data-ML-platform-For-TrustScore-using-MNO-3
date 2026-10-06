@@ -1,0 +1,161 @@
+# Contract derived from the client POC and document section 6.1.2.
+# error quarantines the row; warning retains the row and reports a KPI.
+# Notes fields are a fixed allowlist; extra JSON keys are intentionally ignored.
+inputs:
+  id:
+    aliases:
+    - id
+    required: true
+  change_key:
+    aliases:
+    - change_key
+    required: true
+  change_type:
+    aliases:
+    - change_type
+    required: true
+  timestamp:
+    aliases:
+    - timestamp
+    required: true
+  notes:
+    aliases:
+    - notes
+    required: false
+notes_fields:
+- mno
+- subId
+- msisdnChangeSide
+- correlationId
+- otherMSISDN
+output:
+  record_id: bigint
+  phone_number_AC_hash: string
+  event_type: string
+  event_timestamp: timestamp
+  mno: string
+  subId: string
+  msisdnChangeSide: string
+  correlationId: string
+  otherMSISDN: string
+  ingestion_ts: timestamp
+  source_name: string
+  source_event_id: bigint
+  schema_version: int
+  event_date: date
+dataset: account_changes_batch
+schema_version: 1
+source_name: MYSQL
+timezone: America/Toronto
+null_tokens:
+- ''
+- \N
+rules:
+- id: required_record_id
+  kind: required
+  column: record_id
+  severity: error
+- id: required_phone_number_AC_hash
+  kind: required
+  column: phone_number_AC_hash
+  severity: error
+- id: required_event_type
+  kind: required
+  column: event_type
+  severity: error
+- id: required_event_timestamp
+  kind: required
+  column: event_timestamp
+  severity: error
+- id: required_mno
+  kind: required
+  column: mno
+  severity: error
+- id: required_source_name
+  kind: required
+  column: source_name
+  severity: error
+- id: required_schema_version
+  kind: required
+  column: schema_version
+  severity: error
+- id: required_event_date
+  kind: required
+  column: event_date
+  severity: error
+- id: required_source_event_id
+  kind: required
+  column: source_event_id
+  severity: error
+- id: allowed_mno
+  kind: allowed
+  column: mno
+  severity: error
+  values:
+  - BELL
+  - ROGERS
+  - TELUS
+- id: by_mno_event_type
+  kind: by_mno
+  column: event_type
+  severity: error
+  values:
+    ROGERS:
+    - DEVICE_CHANGE
+    - SIM_CHANGE
+    - STATUS_CHANGE-C
+    TELUS:
+    - DEVICE_CHANGE
+    - MSISDN_CHANGE
+    - MSISDN_CHANGE_FROM
+    - SIM_CHANGE
+    - STATUS_CHANGE-A
+    - STATUS_CHANGE-AA
+    - STATUS_CHANGE-C
+    - STATUS_CHANGE-S
+    BELL:
+    - ADDRESS_CHANGE
+    - DEVICE_CHANGE
+    - MSISDN_CHANGE
+    - MSISDN_CHANGE_FROM
+    - OWNERSHIP_CHANGE
+    - SIM_CHANGE
+    - STATUS_CHANGE-A
+    - STATUS_CHANGE-AA
+    - STATUS_CHANGE-C
+    - STATUS_CHANGE-S
+- id: regex_phone_number_AC_hash
+  kind: regex
+  column: phone_number_AC_hash
+  severity: error
+  pattern: (?i)^[a-f0-9]{64}$
+- id: future_event_timestamp
+  kind: future
+  column: event_timestamp
+  severity: error
+  grace_seconds: 0
+- id: flag_bad_event_timestamp
+  kind: flag
+  column: _bad_event_timestamp
+  severity: error
+- id: flag_bad_record_id
+  kind: flag
+  column: _bad_record_id
+  severity: error
+- id: flag_bad_notes
+  kind: flag
+  column: _bad_notes
+  severity: error
+- id: positive_record_id
+  kind: positive
+  column: record_id
+  severity: error
+- id: regex_subId
+  kind: regex
+  column: subId
+  severity: warning
+  pattern: (?i)^[a-f0-9]{64}$
+- id: flag_warn_rogers_notes
+  kind: flag
+  column: _warn_rogers_notes
+  severity: warning

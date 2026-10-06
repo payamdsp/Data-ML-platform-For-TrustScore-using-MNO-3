@@ -1,0 +1,57 @@
+# DQ check definition: tu_portps_tulip
+#
+# Tulip variant of dataset=tu_portps (batch). Same table shape, except the batch
+# per-response provenance id (source_event_id, not a row key) is replaced by request_id:
+# the id of the tulip API call that produced the event. request_id is the first
+# column, non-null and UNIQUE, so this table asserts a real primary key.
+
+dataset: tu_portps_tulip
+
+primary_keys: [request_id]           # tulip feed is request-grained: one API call per event,
+                                     # each carries a unique request_id -> a true row-level PK.
+                                     # (batch tu_portps sets [] because source_event_id is a
+                                     # per-response id shared across the exploded events.)
+partition_by:                        # null: TU has from_mno/to_mno, no single MNO column
+
+event_timestamp_col: event_timestamp
+
+completeness:
+  required_columns:                  # test notebook check_defs (error-level completeness)
+    - request_id
+    - phone_number_ac_hash
+    - phone_number_at_hash
+    - event_timestamp
+    - event_date
+    - event_type
+    - event_seq
+    - to_spid
+
+consistency:
+  allowed_values:
+    event_type:                      # EVENT_TYPE_MAP targets
+      [INTER_SPID_PORT, INTRA_SPID_PORT, NPAC_CODE_ASSIGNMENT,
+       RETURN_TO_NPAC_CODE_ASSIGNEE, NPAC_SPID_UPDATE, NPAC_SPID_MIGRATION]
+
+validity:                            # S12 formats Java regex (rlike), NULLs skipped
+  formats:
+    request_id: '(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'  # UUID-shaped API request id
+    phone_number_at_hash: '(?i)^[a-f0-9]{64}$'  # AT-hash family, hex64 (audit tests notebook)
+    to_spid: '^[0-9A-Z]{4}$'                # NPAC SPIDs: 4-char upper alnum (brand_map keys)
+    from_spid: '^[0-9A-Z]{4}$'              # nullable on first event; NULLs skipped
+
+victim_exclusion:                    # S12 guard this table has no attestation column yet.
+  column: null                       # set both to enable, e.g. column: victim_attestation
+  allowed_values: []                 # allowed_values: [CONFIRMED_BAD_ACTOR]
+
+timeliness:
+  # tulip = ingestion-gap streaming mode. request_id makes each row one API call and
+  # ingestion_ts is stamped per request (the POC still writes one RUN_TS). The delay gate
+  # (ingestion_ts - event_timestamp) is left OFF: TU returns full porting history, so
+  # event_timestamp can be years old and the gap measures port age, not pipeline lag.
+  # Currency on ingestion_ts is the meaningful freshness signal for a tulip feed.
+  mode: streaming
+  ingestion_timestamp_col: ingestion_ts
+  max_delay_seconds: null            # governance-provided; set a number to gate the ingestion gap
+  currency:
+    timestamp_col: ingestion_ts
+    max_age_seconds: 86400           # tulip rows should ingest within a day

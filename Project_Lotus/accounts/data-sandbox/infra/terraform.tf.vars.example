@@ -1,0 +1,2 @@
+emr_vpc_id     = "vpc-01234567987"
+emr_subnet_ids = ["subnet-012345678", "subnet-0123864547"]

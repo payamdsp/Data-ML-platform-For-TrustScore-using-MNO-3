@@ -1,0 +1,50 @@
+# DQ check definition: tu_portps
+
+dataset: tu_portps
+
+primary_keys: []                    # source_event_id is TU's event id, NOT a row-level unique key:
+                                    # one port event spans multiple rows (see event_seq), so ~3,948 of
+                                    # 8,894 rows share a source_event_id. No PK uniqueness asserted.
+                                    # (with no key set, the uniqueness family checks full-row distinctness.)
+partition_by:                       # null: TU has from_mno/to_mno, no single MNO column
+
+event_timestamp_col: event_timestamp
+
+completeness:
+  required_columns:                 # test notebook check_defs (error-level completeness)
+    - source_event_id
+    - phone_number_ac_hash
+    - phone_number_at_hash
+    - event_timestamp
+    - event_date
+    - event_type
+    - event_seq
+    - to_spid
+
+consistency:
+  allowed_values:
+    event_type:                     # EVENT_TYPE_MAP targets
+      [INTER_SPID_PORT, INTRA_SPID_PORT, NPAC_CODE_ASSIGNMENT,
+       RETURN_TO_NPAC_CODE_ASSIGNEE, NPAC_SPID_UPDATE, NPAC_SPID_MIGRATION]
+
+validity:                           # S12 formats Java regex (rlike), NULLs skipped
+  formats:
+    # source_event_id format dropped: 100% of live rows failed '(?i)^[a-f0-9]{32}$' (the values are
+    # not 32-char hex). Re-add once the real format is confirmed from a sample.
+    phone_number_at_hash: '(?i)^[a-f0-9]{64}$'  # AT-hash family, hex64 (audit tests notebook)
+    to_spid: '^[0-9A-Z]{4}$'                # NPAC SPIDs: 4-char upper alnum (brand_map keys)
+    from_spid: '^[0-9A-Z]{4}$'              # nullable on first event; NULLs skipped
+
+victim_exclusion:                   # S12 guard this table has no attestation column yet.
+  column: null                      # set both to enable, e.g. column: victim_attestation
+  allowed_values: []                # allowed_values: [CONFIRMED_BAD_ACTOR]
+
+timeliness:
+  # batch = event-time only (gate: no event dated after the run). streaming (gap =
+  # ingestion_ts - event_timestamp) is the AC's definition; use it once fed incrementally
+  # with a real ingestion_ts. Here ingestion_ts is lit(RUN_TS), one value per batch (cleaning cell 39).
+  mode: batch
+  future_grace_seconds: 0
+  currency:                         # meaningless while ingestion_ts is a placeholder
+    timestamp_col: ingestion_ts
+    max_age_seconds: null           # governance-provided; set a number to enable

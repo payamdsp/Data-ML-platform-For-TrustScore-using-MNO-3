@@ -1,0 +1,12 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+*.auto.tfvars
+*.tfvars
+
+# The lock file is committed per root, so the apply resolves what the check did.
+!.terraform.lock.hcl

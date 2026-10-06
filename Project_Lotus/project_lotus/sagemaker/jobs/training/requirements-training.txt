@@ -1,0 +1,29 @@
+# Trust Score 0.5 - TRAINING image (Dockerfile.training).
+#
+# The same versions as local/requirements.txt, which the smoke test
+# (sagemaker/tests/smoke_local.py) passed against, minus laptop-only tools.
+# Keep the model libraries identical to requirements-inference.txt: a
+# model.joblib bundle only loads reliably under the versions that wrote it.
+# torch comes from the CPU-only index (set in the Dockerfile).
+
+# the package's runtime dependencies (pyproject.toml)
+PyYAML==6.0.3
+boto3==1.43.103
+numpy==2.4.6
+pandas==3.0.6
+pyarrow==25.0.1
+scikit-learn==1.9.1
+scipy==1.17.1
+matplotlib==3.11.2
+joblib==1.6.0
+psutil==7.2.2
+tabulate==0.10.0
+
+# model backends - MUST match requirements-inference.txt
+pyod==3.6.6
+numba==0.67.0
+hdbscan==0.8.44
+torch==2.14.0
+
+# training only: Spark, local inside the container (reads the feature tables)
+pyspark==3.5.1

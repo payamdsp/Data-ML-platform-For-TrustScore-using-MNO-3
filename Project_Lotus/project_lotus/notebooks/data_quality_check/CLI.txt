@@ -1,0 +1,41 @@
+silver_dq: DQ metrics CLI
+
+Runs the configured DQ families (completeness, consistency, validity, uniqueness,
+timeliness, victim_exclusion) against one silver Iceberg table and writes
+summary.json + metrics.json to <dq-root>/results/dataset=<name>/run_date=<date>/.
+
+No SparkSession is created here; it uses whatever getOrCreate() returns, so run it
+where Spark is already configured (spark-submit, EMR, Glue, a cluster notebook).
+
+Usage:
+  python -m silver_dq --checks URI --table FQN --dq-root URI [options]
+
+Required:
+  --checks URI        this table's checks.yaml (local path or s3://). Everything about
+                      the table (primary keys, required columns, allowed values, max
+                      delay) is read from here.
+  --table FQN         source silver table, e.g. trust_score_v1_poc_silver.tu_portps.
+                      Its last name segment must equal the yaml's dataset.
+  --dq-root URI       results root, e.g. s3://enstream-lake-silver-dev/poc/dq
+
+Optional:
+  --run-date DATE     YYYY-MM-DD; partitions the output path. Default: today on the
+                      driver (UTC on a cluster). Pass it if the calendar date matters.
+  --filter SQL        row filter, e.g. "event_date = DATE'2024-08-01'". Default: whole table.
+  --schema-dir URI    validate both outputs against the committed JSON Schema before
+                      writing (repo path or published s3:// prefix). Skipped if omitted.
+  --split-size-mb MB  Iceberg read split size. Raise it (e.g. 512) if a scan dies with
+                      "Timeout waiting for connection from pool".
+  --dry-run           compute and report, write nothing.
+
+Exit codes:
+  0  every rule passed; the silver run is trustworthy
+  1  a rule failed; results are still written, the red summary is the signal
+  2  could not run (bad args, missing table, and so on)
+
+Example:
+  python -m silver_dq \
+    --table trust_score_v1_poc_silver.audit_trail_services_3 \
+    --checks s3://enstream-lake-silver-dev/poc/dq/checks/dataset=audit_trail_services_3/checks.yaml \
+    --dq-root s3://enstream-lake-silver-dev/poc/dq \
+    --schema-dir s3://enstream-lake-silver-dev/poc/dq/schemas

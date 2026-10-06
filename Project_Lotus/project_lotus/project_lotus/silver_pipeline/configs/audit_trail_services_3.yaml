@@ -1,0 +1,227 @@
+# Contract derived from the client POC and document section 6.1.2.
+# error quarantines the row; warning retains the row and reports a KPI.
+# Notes fields are a fixed allowlist; extra JSON keys are intentionally ignored.
+# The test identity lists at the bottom come from the client audit cleaning POC.
+inputs:
+  id:
+    aliases:
+    - id
+    required: true
+  operation:
+    aliases:
+    - operation
+    required: true
+  partner_id:
+    aliases:
+    - partner_id
+    required: true
+  timestamp:
+    aliases:
+    - timestamp
+    required: true
+  request_id:
+    aliases:
+    - request_id
+    required: true
+  mno:
+    aliases:
+    - mno
+    required: false
+  msisdn:
+    aliases:
+    - msisdn
+    required: false
+  hashed_msisdn:
+    aliases:
+    - hashed_msisdn
+    required: false
+  encrypted_msisdn:
+    aliases:
+    - encrypted_msisdn
+    required: false
+  service_provider_id:
+    aliases:
+    - service_provider_id
+    required: false
+  response_code:
+    aliases:
+    - response_code
+    required: false
+  source_ip:
+    aliases:
+    - source_ip
+    required: false
+  date:
+    aliases:
+    - date
+    required: false
+  timestamp_ms:
+    aliases:
+    - timestamp_ms
+    required: false
+  brand:
+    aliases:
+    - brand
+    required: false
+  processing_time:
+    aliases:
+    - processing_time
+    - processing_time_ms
+    required: false
+notes_fields: []
+output:
+  record_id: string
+  operation: string
+  mno: string
+  msisdn: string
+  phone_number_AT_hash: string
+  encrypted_msisdn: string
+  partner_id: string
+  partner_name: string
+  service_provider_id: string
+  service_provider_name: string
+  response_code: string
+  source_ip: string
+  api_timestamp: timestamp
+  date: date
+  timestamp_ms: timestamp
+  brand: string
+  industry: string
+  api_type: string
+  processing_time_ms: bigint
+  correlation_id: string
+  source_name: string
+  source_event_id: string
+  schema_version: int
+  event_date: date
+dataset: audit_trail_services_3
+schema_version: 1
+source_name: audit_trail_services_3
+timezone: America/Toronto
+null_tokens:
+- ''
+- \N
+rules:
+- id: required_record_id
+  kind: required
+  column: record_id
+  severity: error
+- id: required_operation
+  kind: required
+  column: operation
+  severity: error
+- id: required_partner_id
+  kind: required
+  column: partner_id
+  severity: error
+- id: required_api_timestamp
+  kind: required
+  column: api_timestamp
+  severity: error
+- id: required_api_type
+  kind: required
+  column: api_type
+  severity: error
+- id: required_source_name
+  kind: required
+  column: source_name
+  severity: error
+- id: required_schema_version
+  kind: required
+  column: schema_version
+  severity: error
+- id: required_source_event_id
+  kind: required
+  column: source_event_id
+  severity: error
+- id: required_event_date
+  kind: required
+  column: event_date
+  severity: error
+- id: allowed_mno
+  kind: allowed
+  column: mno
+  severity: error
+  values:
+  - BELL
+  - ROGERS
+  - TELUS
+  - BELL_LANDLINE
+  - LINETYPE
+  - EV_LINETYPE
+- id: regex_phone_number_AT_hash
+  kind: regex
+  column: phone_number_AT_hash
+  severity: error
+  pattern: (?i)^[a-f0-9]{64}$
+- id: regex_encrypted_msisdn
+  kind: regex
+  column: encrypted_msisdn
+  severity: error
+  pattern: ^[A-Za-z0-9+/=]+$
+- id: future_api_timestamp
+  kind: future
+  column: api_timestamp
+  severity: error
+  grace_seconds: 0
+- id: flag_bad_api_timestamp
+  kind: flag
+  column: _bad_api_timestamp
+  severity: error
+- id: flag_bad_date
+  kind: flag
+  column: _bad_date
+  severity: error
+- id: flag_bad_timestamp_ms
+  kind: flag
+  column: _bad_timestamp_ms
+  severity: error
+- id: flag_bad_processing_time_ms
+  kind: flag
+  column: _bad_processing_time_ms
+  severity: error
+- id: flag_warn_unknown_api
+  kind: flag
+  column: _warn_unknown_api
+  severity: warning
+- id: flag_warn_partner_reference
+  kind: flag
+  column: _warn_partner_reference
+  severity: warning
+- id: flag_warn_provider_reference
+  kind: flag
+  column: _warn_provider_reference
+  severity: warning
+- id: long_numeric_id_partner_id
+  kind: long_numeric_id
+  column: partner_id
+  severity: error
+- id: long_numeric_id_service_provider_id
+  kind: long_numeric_id
+  column: service_provider_id
+  severity: error
+- id: nonnegative_processing_time_ms
+  kind: nonnegative
+  column: processing_time_ms
+  severity: warning
+- id: date_equal_date
+  kind: date_equal
+  column: date
+  severity: warning
+  other: event_date
+test_partner_ids:
+- DEV_CAMARA_CLEARX
+- dev_camara
+- ens_batch_test
+- enstream
+- flashProd
+- flashprod
+- oleg-prod-jose
+test_provider_ids:
+- DEV_CAMARA_CLEARX
+- def_integrity_sp
+- ens_batch_test
+- flash21
+- flashprod
+- oleg-prodsp-jose
+- testServiceProvider
