@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3000" height="1510" viewBox="0 0 3000 1510" role="img" aria-labelledby="title desc">
+  <title id="title">Project Lotus data platform sequence: Source System to Silver-Gold Release Gate</title>
+  <desc id="desc">Sequence diagram of Bronze arrival, schema validation and Gate 1, per-dataset Silver transformation and quarantine, Silver-Gold handoff evaluation, Gold release object, EventBridge, and ResolveRelease gate.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,4 L0,8 z" fill="#475569"/></marker>
+    <marker id="arrowDashed" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,4 L0,8 z" fill="#64748b"/></marker>
+    <style>
+      .title{font:700 25px Arial,sans-serif;fill:#0f172a}.sub{font:14px Arial,sans-serif;fill:#475569}
+      .head{fill:#dbeafe;stroke:#3b82f6;stroke-width:1.2}.headtext{font:13px Arial,sans-serif;fill:#0f172a;text-anchor:middle}
+      .life{stroke:#94a3b8;stroke-width:1;stroke-dasharray:5 5}.msg{stroke:#475569;stroke-width:1.3;marker-end:url(#arrow)}
+      .reply{stroke:#64748b;stroke-width:1.1;stroke-dasharray:5 4;marker-end:url(#arrowDashed)}
+      .label{font:12px Arial,sans-serif;fill:#1e293b}.section{font:700 15px Arial,sans-serif;fill:#1e3a8a}
+      .note{fill:#fff7ed;stroke:#fb923c;stroke-width:1}.notetext{font:12px Arial,sans-serif;fill:#7c2d12}
+      .ok{fill:#dcfce7;stroke:#22c55e;stroke-width:1}.bad{fill:#fee2e2;stroke:#ef4444;stroke-width:1}
+      .frame{fill:none;stroke:#cbd5e1;stroke-width:1}
+    </style>
+  </defs>
+  <rect width="3000" height="1510" fill="#ffffff"/>
+  <text x="40" y="38" class="title">Project Lotus — Data Platform Sequence</text>
+  <text x="40" y="62" class="sub">Implemented flow from source arrival through Bronze validation, Silver quarantine/publish, and the Silver–Gold release gate</text>
+
+  <!-- lifeline participants -->
+  <g>
+    <rect class="head" x="25" y="82" width="145" height="48" rx="5"/><text class="headtext" x="97" y="111">Source System</text>
+    <rect class="head" x="195" y="82" width="145" height="48" rx="5"/><text class="headtext" x="267" y="103"><tspan x="267">Bronze Landing</tspan><tspan x="267" dy="16">S3</tspan></text>
+    <rect class="head" x="365" y="82" width="145" height="48" rx="5"/><text class="headtext" x="437" y="103"><tspan x="437">EventBridge /</tspan><tspan x="437" dy="16">arrival signal</tspan></text>
+    <rect class="head" x="535" y="82" width="145" height="48" rx="5"/><text class="headtext" x="607" y="103"><tspan x="607">Arrival Claim</tspan><tspan x="607" dy="16">Lambda</tspan></text>
+    <rect class="head" x="705" y="82" width="145" height="48" rx="5"/><text class="headtext" x="777" y="103"><tspan x="777">Bronze Schema</tspan><tspan x="777" dy="16">Validator Lambda</tspan></text>
+    <rect class="head" x="875" y="82" width="145" height="48" rx="5"/><text class="headtext" x="947" y="103"><tspan x="947">Schema Registry</tspan><tspan x="947" dy="16">S3</tspan></text>
+    <rect class="head" x="1045" y="82" width="145" height="48" rx="5"/><text class="headtext" x="1117" y="103"><tspan x="1117">Bronze Validation</tspan><tspan x="1117" dy="16">Control Table</tspan></text>
+    <rect class="head" x="1215" y="82" width="145" height="48" rx="5"/><text class="headtext" x="1287" y="103"><tspan x="1287">SNS</tspan><tspan x="1287" dy="16">Alerts</tspan></text>
+    <rect class="head" x="1385" y="82" width="145" height="48" rx="5"/><text class="headtext" x="1457" y="103"><tspan x="1457">Per-dataset</tspan><tspan x="1457" dy="16">Silver Step Fn</tspan></text>
+    <rect class="head" x="1555" y="82" width="145" height="48" rx="5"/><text class="headtext" x="1627" y="103"><tspan x="1627">Silver-Gold</tspan><tspan x="1627" dy="16">Control Lambda</tspan></text>
+    <rect class="head" x="1725" y="82" width="145" height="48" rx="5"/><text class="headtext" x="1797" y="103"><tspan x="1797">EMR Silver</tspan><tspan x="1797" dy="16">Spark Job</tspan></text>
+    <rect class="head" x="1895" y="82" width="145" height="48" rx="5"/><text class="headtext" x="1967" y="103"><tspan x="1967">Silver</tspan><tspan x="1967" dy="16">Quarantine</tspan></text>
+    <rect class="head" x="2065" y="82" width="145" height="48" rx="5"/><text class="headtext" x="2137" y="103"><tspan x="2137">Silver Business</tspan><tspan x="2137" dy="16">Iceberg</tspan></text>
+    <rect class="head" x="2235" y="82" width="145" height="48" rx="5"/><text class="headtext" x="2307" y="103"><tspan x="2307">Silver-Gold</tspan><tspan x="2307" dy="16">Control Table</tspan></text>
+    <rect class="head" x="2405" y="82" width="145" height="48" rx="5"/><text class="headtext" x="2477" y="103"><tspan x="2477">Gold Release</tspan><tspan x="2477" dy="16">S3 Object</tspan></text>
+    <rect class="head" x="2575" y="82" width="145" height="48" rx="5"/><text class="headtext" x="2647" y="103"><tspan x="2647">EventBridge</tspan><tspan x="2647" dy="16">Gold trigger</tspan></text>
+    <rect class="head" x="2745" y="82" width="220" height="48" rx="5"/><text class="headtext" x="2855" y="103"><tspan x="2855">Gold Step Functions</tspan><tspan x="2855" dy="16">ResolveRelease gate</tspan></text>
+  </g>
+  <g>
+    <path class="life" d="M97 130V1450M267 130V1450M437 130V1450M607 130V1450M777 130V1450M947 130V1450M1117 130V1450M1287 130V1450M1457 130V1450M1627 130V1450M1797 130V1450M1967 130V1450M2137 130V1450M2307 130V1450M2477 130V1450M2647 130V1450M2855 130V1450"/>
+  </g>
+
+  <!-- section backgrounds -->
+  <rect x="20" y="150" width="2945" height="180" fill="#eff6ff" opacity=".55"/>
+  <text class="section" x="35" y="171">1. Bronze arrival and idempotent claim — per dataset / run date</text>
+  <rect x="20" y="342" width="2945" height="235" fill="#f0fdf4" opacity=".58"/>
+  <text class="section" x="35" y="363">2. Bronze schema validation and Gate 1</text>
+  <rect x="20" y="590" width="2945" height="478" fill="#fffbeb" opacity=".58"/>
+  <text class="section" x="35" y="611">3. Per-dataset Silver execution — independent/staggered; quarantine bad rows, publish good rows</text>
+  <rect x="20" y="1080" width="2945" height="350" fill="#faf5ff" opacity=".65"/>
+  <text class="section" x="35" y="1101">4. Silver–Gold handoff and Gold release gate</text>
+
+  <!-- Bronze arrival messages -->
+  <path class="msg" d="M97 198H267"/><text class="label" x="116" y="190">Write completed Parquet files</text>
+  <path class="msg" d="M267 220H437"/><text class="label" x="285" y="212">Folder-complete / S3 event</text>
+  <path class="msg" d="M437 242H607"/><text class="label" x="455" y="234">Claim(dataset, date, folder, owner)</text>
+  <path class="msg" d="M607 264H267"/><text class="label" x="385" y="256">Conditional S3 claim; one owner per date</text>
+  <path class="reply" d="M267 286H607"/><text class="label" x="384" y="279">claimed / already claimed</text>
+  <path class="msg" d="M607 308H777"/><text class="label" x="618" y="300">Validate this dataset folder</text>
+  <rect class="note" x="805" y="314" width="420" height="23" rx="4"/><text class="notetext" x="817" y="330">Duplicate claim by another owner: stop duplicate arrival run.</text>
+
+  <!-- Bronze validation -->
+  <path class="msg" d="M777 389H947"/><text class="label" x="792" y="381">Load current schema contract</text>
+  <path class="reply" d="M947 411H777"/><text class="label" x="808" y="404">Expected types / version</text>
+  <path class="msg" d="M777 433H1117"/><text class="label" x="866" y="425">Register every file PENDING first</text>
+  <path class="msg" d="M777 455H267"/><text class="label" x="430" y="447">List files; inspect Parquet footer / bounded samples</text>
+  <path class="reply" d="M267 477H777"/><text class="label" x="432" y="470">Actual schema for each file</text>
+  <path class="msg" d="M777 499H1117"/><text class="label" x="862" y="491">Write per-file PASS / WARN / FAIL / ERROR</text>
+  <path class="msg" d="M777 521H1457"/><text class="label" x="1030" y="513">PASS: start one dataset's state-machine execution</text>
+  <path class="msg" d="M777 543H1287"/><text class="label" x="990" y="535">BLOCK: SNS alert; no Silver starts</text>
+  <rect class="ok" x="1390" y="550" width="405" height="22" rx="4"/><text class="label" x="1400" y="565">Gate 1 permits only complete file set of PASS/WARN.</text>
+
+  <!-- Silver -->
+  <path class="msg" d="M1457 636H1627"/><text class="label" x="1470" y="628">gate_one(dataset, folder)</text>
+  <path class="msg" d="M1627 658H2307"/><text class="label" x="1840" y="650">Re-read latest Bronze attempt / file counts</text>
+  <path class="reply" d="M2307 680H1627"/><text class="label" x="1860" y="673">PASS or BLOCK</text>
+  <path class="msg" d="M1457 702H1627"/><text class="label" x="1465" y="694">build_silver_args(attempt)</text>
+  <path class="reply" d="M1627 724H1457"/><text class="label" x="1474" y="717">spark-submit args + fresh run_id</text>
+  <path class="msg" d="M1457 746H1797"/><text class="label" x="1540" y="738">Run Spark publish job</text>
+  <path class="msg" d="M1797 768H267"/><text class="label" x="990" y="760">Read immutable approved Bronze Parquet</text>
+  <path class="reply" d="M267 790H1797"/><text class="label" x="992" y="783">Bronze rows</text>
+  <path class="msg" d="M1797 812H1797"/><text class="label" x="1810" y="808">Transform → RAW_DQ → issue artifacts</text>
+  <path class="msg" d="M1797 834H1967"/><text class="label" x="1805" y="826">Append RAW_DQ rejected rows + rule IDs</text>
+  <path class="msg" d="M1797 856H1797"/><text class="label" x="1810" y="852">Keep valid rows → exact dedup → CANDIDATE_DQ</text>
+  <path class="msg" d="M1797 878H1967"/><text class="label" x="1805" y="870">Append duplicate-ID failures</text>
+  <path class="msg" d="M1797 900H1797"/><text class="label" x="1810" y="896">Check existing Silver ID/payload conflicts</text>
+  <path class="msg" d="M1797 922H1967"/><text class="label" x="1805" y="914">Append conflicting rows</text>
+  <path class="msg" d="M1797 944H2137"/><text class="label" x="1870" y="936">Append unseen, conforming rows only</text>
+  <path class="reply" d="M2137 966H1797"/><text class="label" x="1880" y="959">Commit / snapshot result</text>
+  <path class="msg" d="M1797 988H1457"/><text class="label" x="1570" y="980">Attempt status + run-scoped summary URI</text>
+  <rect class="note" x="1390" y="1000" width="1450" height="50" rx="5"/><text class="notetext" x="1405" y="1020">On failure/blocked: one retry is built with a fresh Silver run_id. Quarantine-write failure prevents Silver publication.</text><text class="notetext" x="1405" y="1038">A quarantine-only run can succeed without an empty Silver snapshot; warning-only rows stay candidates.</text>
+
+  <!-- Handoff / release gate -->
+  <path class="msg" d="M1457 1130H1627"/><text class="label" x="1470" y="1122">record dataset terminal status</text>
+  <path class="msg" d="M1627 1152H2307"/><text class="label" x="1850" y="1144">Upsert run_date / dataset outcome</text>
+  <path class="msg" d="M1457 1174H1627"/><text class="label" x="1460" y="1166">evaluate after this dataset settles</text>
+  <path class="msg" d="M1627 1196H2307"/><text class="label" x="1840" y="1188">Read all enabled dataset statuses</text>
+  <path class="reply" d="M2307 1218H1627"/><text class="label" x="1850" y="1211">all succeeded / incomplete</text>
+  <path class="msg" d="M1627 1240H2477"/><text class="label" x="1900" y="1232">If all succeeded: conditional write release.json</text>
+  <path class="msg" d="M97 1262H2477"/><text class="label" x="1050" y="1254">Optional manual operator release override</text>
+  <path class="msg" d="M2477 1284H2647"/><text class="label" x="2490" y="1276">S3 Object Created</text>
+  <path class="msg" d="M2647 1306H2855"/><text class="label" x="2660" y="1298">Start Gold state machine directly</text>
+  <path class="msg" d="M2855 1328H1627"/><text class="label" x="2130" y="1320">release_gate: validate release object + re-check control table</text>
+  <path class="msg" d="M1627 1350H2307"/><text class="label" x="1850" y="1342">Re-read enabled Silver statuses</text>
+  <path class="reply" d="M2307 1372H1627"/><text class="label" x="1830" y="1365">Clean state / manual override / incomplete</text>
+  <path class="reply" d="M1627 1394H2855"/><text class="label" x="2070" y="1387">Gate PASS: mint one gold_run_id; return resolved config</text>
+  <rect class="ok" x="2400" y="1405" width="560" height="30" rx="5"/><text class="label" x="2413" y="1425">Gold release gate passed → downstream Gold stages may begin.</text>
+  <rect class="bad" x="1580" y="1405" width="790" height="30" rx="5"/><text class="label" x="1593" y="1425">Automatic release + incomplete state is rejected; manual override is alerted and recorded.</text>
+  <text class="sub" x="35" y="1480">Note: each dataset starts Silver when its own Bronze validation passes; datasets can land at different times. This diagram follows the implemented actions and data contracts.</text>
+</svg>

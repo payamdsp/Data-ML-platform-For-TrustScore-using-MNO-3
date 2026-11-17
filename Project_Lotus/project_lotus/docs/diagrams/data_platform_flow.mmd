@@ -1,0 +1,136 @@
+%% Project Lotus implemented data-platform sequence (source to Silver-Gold release gate)
+%% Generated from the current Lambda, Step Functions, and Silver pipeline behavior.
+sequenceDiagram
+    autonumber
+    actor Source as Source System
+    participant Landing as Bronze Landing S3
+    participant EB as EventBridge / folder-complete trigger
+    participant Claim as Bronze Arrival Claim Lambda
+    participant Validator as Bronze Schema Validator Lambda
+    participant Registry as Schema Registry S3
+    participant BronzeCtl as Bronze Validation Control Table<br/>(Athena / Iceberg)
+    participant Alert as SNS Alerts
+    participant SilverSFN as Per-dataset Bronze-to-Silver<br/>Step Functions
+    participant Control as Silver-Gold Control Lambda
+    participant EMR as EMR Silver Spark Job
+    participant Quarantine as Dataset Quarantine<br/>Iceberg Table
+    participant Silver as Silver Business<br/>Iceberg Table
+    participant Handoff as Silver-Gold Control Table<br/>(Athena / Iceberg)
+    participant Release as Gold Release S3 Object
+    participant GoldEB as EventBridge
+    participant GoldSFN as Gold Step Functions<br/>(ResolveRelease gate)
+
+    rect rgb(239, 246, 255)
+        Note over Source,Landing: Bronze arrival — one dataset and run date per execution
+        Source->>Landing: Write completed dataset files (Parquet)
+        Landing-->>EB: S3 object / folder-complete signal
+        EB->>Claim: Claim arrival window (dataset, run_date, folder_path, owner)
+        Claim->>Landing: Conditional S3 claim write (one claim per dataset/date)
+        Landing-->>Claim: Claim result
+        alt Claim acquired (or idempotent retry by same owner)
+            Claim-->>Validator: Invoke schema validation for this dataset folder
+        else Already claimed by another execution
+            Claim-->>SilverSFN: Do not start a duplicate arrival run
+        end
+    end
+
+    rect rgb(240, 253, 244)
+        Note over Validator,BronzeCtl: Bronze schema gate — schema is checked per Parquet file
+        Validator->>Registry: Load current.json and active schema version
+        Registry-->>Validator: Canonical expected column/type contract
+        Validator->>Landing: List Parquet files; read footer (and bounded samples for eligible string coercion checks)
+        Validator->>BronzeCtl: Register every file as PENDING before validating
+        loop Each Parquet file (validation is concurrent within this Lambda)
+            Validator->>Landing: Read Parquet footer / eligible bounded sample
+            Landing-->>Validator: Actual schema and sample results
+            Validator->>BronzeCtl: Record PASS, WARN, FAIL, or ERROR
+        end
+        alt All files accounted for and each is PASS or WARN
+            Validator->>SilverSFN: Start this dataset's execution (run_date, folder, table contracts)
+        else Any FAIL/ERROR, incomplete results, or no valid gate
+            Validator->>Alert: Publish Bronze validation alert
+            Note over Validator,SilverSFN: No Silver execution starts for a blocked Bronze dataset
+        end
+    end
+
+    rect rgb(255, 251, 235)
+        Note over SilverSFN,EMR: Gate 1 and Silver — independent, staggered execution per dataset (not a joint fan-out)
+        SilverSFN->>Control: gate_one(dataset_name, folder_path)
+        Control->>BronzeCtl: Re-read latest attempt; require every file PASS/WARN and expected count
+        BronzeCtl-->>Control: Dataset gate PASS or BLOCK
+        alt Gate 1 = PASS
+            loop Silver attempt 1; on failure/blocked, one retry with a fresh run_id
+                SilverSFN->>Control: build_silver_args(dataset, run_date, folder, attempt)
+                Control-->>SilverSFN: spark-submit arguments, table names, fresh Silver run_id
+                SilverSFN->>EMR: Run silver_pipeline in publish mode for this dataset
+                EMR->>Landing: Read immutable, gate-approved Bronze Parquet
+                Landing-->>EMR: Bronze rows
+                opt audit_trail_services_3 only
+                    EMR->>Landing: Read required partner/provider reference CSVs from configured locations
+                    Landing-->>EMR: Reference data for enrichment
+                end
+                EMR->>EMR: Transform and normalize; RAW_DQ; write issue artifacts
+                alt RAW_DQ failures exist
+                    EMR->>Quarantine: Append failed rows + rule IDs (dataset-specific table)
+                    Quarantine-->>EMR: Quarantine write succeeds
+                else No RAW_DQ failures
+                    Note over EMR,Quarantine: No raw-DQ quarantine rows for this stage
+                end
+                EMR->>EMR: Keep valid rows; exact-business-row deduplicate; CANDIDATE_DQ
+                alt Duplicate record_id / candidate failures exist
+                    EMR->>Quarantine: Append rejected candidates + rule IDs
+                    Quarantine-->>EMR: Quarantine write succeeds
+                end
+                EMR->>EMR: Compare candidates with existing Silver IDs/payloads
+                alt Existing-ID payload conflicts exist
+                    EMR->>Quarantine: Append conflicting rows; remove from publish candidates
+                    Quarantine-->>EMR: Quarantine write succeeds
+                end
+                EMR->>Silver: Append unseen, conforming rows only
+                Silver-->>EMR: Silver commit / snapshot result
+                EMR->>EMR: Write run-scoped summary.json and DQ issue artifacts
+            end
+            EMR-->>SilverSFN: Attempt result (success, failure, or blocked)
+            SilverSFN->>Control: record(dataset, status, run_id, rows, summary URI)
+            Control->>Handoff: Upsert dataset outcome for run_date
+            opt Silver status is failed or blocked after retry
+                Control->>Alert: Publish Silver pipeline alert
+            end
+            SilverSFN->>Control: evaluate(run_date) after this dataset settles
+            Control->>Handoff: Read statuses for all enabled Silver datasets
+            Handoff-->>Control: Current per-dataset outcomes
+            alt Every enabled dataset succeeded
+                Control->>Release: Conditional write release.json (automatic release)
+            else One or more datasets are missing / not succeeded
+                Control-->>SilverSFN: Not released yet; later dataset completion will evaluate again
+            end
+        else Gate 1 = BLOCK
+            SilverSFN->>Control: record blocked outcome
+            Control->>Handoff: Upsert blocked status
+            Control->>Alert: Publish gate/Silver alert
+            Note over SilverSFN,GoldSFN: Stop this dataset branch; no Silver write and no Gold release
+        end
+    end
+
+    rect rgb(250, 245, 255)
+        Note over Release,GoldSFN: Gate 2 / Gold release gate — automatic release or operator-written override
+        opt Operator writes or updates a manual release object
+            Source->>Release: Write release.json override
+        end
+        Release-->>GoldEB: S3 Object Created event (gold-release/ prefix)
+        GoldEB->>GoldSFN: Start Gold state machine directly
+        GoldSFN->>Control: release_gate(release object event)
+        Control->>Release: Read release.json; require release_gold=true
+        Release-->>Control: run_date, release flags, config overlays, released_by
+        Control->>Handoff: Re-read all enabled dataset statuses
+        Handoff-->>Control: Clean or incomplete control state
+        alt Automatic release and every enabled dataset succeeded
+            Control-->>GoldSFN: Gate PASS; mint one gold_run_id and return resolved config
+            Note over GoldSFN: Gold release gate passed; subsequent Gold stages use this same run_id
+        else Manual override with incomplete Silver state
+            Control->>Alert: Alert and record the manual override context
+            Control-->>GoldSFN: Gate permits override; mint gold_run_id and return resolved config
+        else Invalid release object or automatic release with incomplete state
+            Control-->>GoldSFN: Reject execution; release gate fails
+        end
+    end
